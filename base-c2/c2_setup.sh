@@ -1,4 +1,7 @@
 #!/bin/bash
 # Just a PoC right now...still WIP
-sudo export APT_LISTCHANGES_FRONTEND=cat && sudo apt update && sudo apt upgrade -y && sudo apt autoclean -y && sudo apt autoremove -y
-sudo apt install empire -y
+apt update
+apt install empire -y
+apt install golang -y
+go get github.com/Ne0nd0g/merlin
+apt install armitage -y
