@@ -14,6 +14,15 @@ data "aws_ami" "ubuntu" {
 
 }
 
+
+# Update with your IP to whitelist ssh access
+
+variable "access_addr" {
+    type    = string
+    default = "0.0.0.0/0"
+}
+
+
 # Retrieve the AZ where we want to create network resources
 # This must be in the region selected on the AWS provider.
 data "aws_availability_zone" "kraken_zone" {
@@ -29,7 +38,7 @@ resource "aws_security_group" "kraken_ssh" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks  = ["75.62.72.13/32"]
+    cidr_blocks  = [var.access_addr]
   }
 
   egress {
@@ -41,11 +50,11 @@ resource "aws_security_group" "kraken_ssh" {
 }
 
 resource "aws_instance" "kraken" {
-  ami           = "${data.aws_ami.ubuntu.id}"
+  ami           = data.aws_ami.ubuntu.id
   instance_type = "p2.8xlarge"
-  security_groups = ["${aws_security_group.kraken_ssh.name}"]
+  security_groups = [aws_security_group.kraken_ssh.name]
   key_name = "primary-kraken-key"
-  availability_zone = "${data.aws_availability_zone.kraken_zone.name}"
+  availability_zone = data.aws_availability_zone.kraken_zone.name
 
 # Run this script as root once provisioning is complete. Ubuntu won't fetch our dependencies correctly if we run a remote-exec so this can't be fully automated for now.
  provisioner "file" {
@@ -54,8 +63,8 @@ resource "aws_instance" "kraken" {
     connection {
       type        = "ssh"
       user        = "ubuntu"
-      private_key = "${file("~/.ssh/primary-kraken-key.pem")}"
-      host        = "${self.public_ip}"
+      private_key = file("~/.ssh/primary-kraken-key.pem")
+      host        = self.public_ip
     }
   }
 
@@ -65,7 +74,7 @@ resource "aws_instance" "kraken" {
 }
 
 resource "aws_ebs_volume" "wordlists" {
-  availability_zone = "${data.aws_availability_zone.kraken_zone.name}"
+  availability_zone = data.aws_availability_zone.kraken_zone.name
   size              = 500
 
   tags = {
@@ -75,24 +84,28 @@ resource "aws_ebs_volume" "wordlists" {
 
 resource "aws_volume_attachment" "wordlists_volume" {
   device_name = "/dev/xvdh"
-  volume_id   = "${aws_ebs_volume.wordlists.id}"
-  instance_id = "${aws_instance.kraken.id}"
+  volume_id   = aws_ebs_volume.wordlists.id
+  instance_id = aws_instance.kraken.id
 }
 
 resource "null_resource" "data_config" {
-  depends_on = ["aws_volume_attachment.wordlists_volume", "aws_instance.kraken"]
+  depends_on = [aws_volume_attachment.wordlists_volume, aws_instance.kraken]
   
+  triggers = {
+    kraken_ip = aws_instance.kraken.public_ip
+  }
+
   ## run unmount commands when destroying the data volume
   provisioner "remote-exec" {
-    when = "destroy"
-    on_failure = "continue"
+    when = destroy
+    on_failure = continue
     connection {
       type = "ssh"
       agent = false
       timeout = "60s"
       user = "ubuntu"
-      private_key = "${file("~/.ssh/primary-kraken-key.pem")}"
-      host = "${aws_instance.kraken.public_ip}"
+      private_key = file("~/.ssh/primary-kraken-key.pem")
+      host = self.triggers.kraken_ip
     }
     inline = ["sudo umount /media/wordlists"]
   }
@@ -100,5 +113,5 @@ resource "null_resource" "data_config" {
 
 
 output "IP" {
-    value = "${aws_instance.kraken.public_ip}"
+    value = aws_instance.kraken.public_ip
 }
