@@ -14,6 +14,15 @@ data "aws_ami" "kali" {
 
 }
 
+
+# Put your IP here to whitelist it for ssh
+
+variable "access_addr" {
+    type    = string
+    default = "0.0.0.0/0"
+
+}
+
 resource "aws_security_group" "c2_group" {
   name        = "c2_group"
   description = "Allow Ports for C2 Listeners and SSH access"
@@ -71,7 +80,7 @@ resource "aws_security_group" "c2_group" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["YOUR_IP"]
+    cidr_blocks = [var.access_addr]
   }
 
   egress {
@@ -83,9 +92,9 @@ resource "aws_security_group" "c2_group" {
 }
 
 resource "aws_instance" "primary_c2" {
-  ami             = "${data.aws_ami.kali.id}"
+  ami             = data.aws_ami.kali.id
   instance_type   = "t2.micro"
-  security_groups = ["${aws_security_group.c2_group.name}"]
+  security_groups = [aws_security_group.c2_group.name]
   key_name        = "primary-c2-key"
 
   provisioner "file" {
@@ -94,8 +103,8 @@ resource "aws_instance" "primary_c2" {
     connection {
       type        = "ssh"
       user        = "ec2-user"
-      private_key = "${file("~/.ssh/primary-c2-key.pem")}"
-      host        = "${self.public_ip}"
+      private_key = file("~/.ssh/primary-c2-key.pem")
+      host        = self.public_ip
     }
   }
 
@@ -104,8 +113,8 @@ resource "aws_instance" "primary_c2" {
     connection {
       type        = "ssh"
       user        = "ec2-user"
-      private_key = "${file("~/.ssh/primary-c2-key.pem")}"
-      host        = "${self.public_ip}"
+      private_key = file("~/.ssh/primary-c2-key.pem")
+      host        = self.public_ip
     }
   }
 
@@ -115,5 +124,5 @@ resource "aws_instance" "primary_c2" {
 }
 
 output "IP" {
-  value = "${aws_instance.primary_c2.public_ip}"
+  value = aws_instance.primary_c2.public_ip
 }
